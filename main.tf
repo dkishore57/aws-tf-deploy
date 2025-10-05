@@ -9,6 +9,7 @@ resource "aws_vpc" "main" {
   }
 }
 
+
 resource "aws_subnet" "public_subnet_az1" {
   vpc_id=aws_vpc.main.id
   cidr_block="10.0.0.0/26"
@@ -19,6 +20,7 @@ resource "aws_subnet" "public_subnet_az1" {
     Name="Public Subnet AZ1"
   }
 }
+
 resource "aws_subnet" "public_subnet_az2" {
   vpc_id=aws_vpc.main.id
   cidr_block="10.0.0.64/26"
@@ -77,7 +79,6 @@ resource "aws_route_table_association" "public_assoc_az2" {
   route_table_id=aws_route_table.public_rt.id
 }
 
-
 resource "aws_security_group" "alb_sg" {
   name="alb-security-group"
   vpc_id=aws_vpc.main.id
@@ -106,6 +107,7 @@ resource "aws_security_group" "app_sg" {
     from_port=80
     to_port=80
     protocol="tcp"
+
     security_groups=[aws_security_group.alb_sg.id]
   }
 
@@ -118,6 +120,7 @@ resource "aws_security_group" "app_sg" {
 
   tags={Name="App-SG"}
 }
+
 resource "aws_lb" "app_alb" {
   name="app-load-balancer"
   internal=false  # External ALB
@@ -163,13 +166,23 @@ resource "aws_launch_template" "app_launch_template" {
   image_id=var.ami
   instance_type=var.instance_type
   vpc_security_group_ids=[aws_security_group.app_sg.id]
+  
+  user_data = base64encode(<<EOF
+#!/bin/bash
+# Install Python 3 (Amazon Linux 2 has Python 3 preinstalled)
 
-  tag_specifications {
-    resource_type = "instance"
-    tags={
-      Name="AppInstance"
-    }
-  }
+# Create a simple HTML file
+cat <<HTML > /home/ec2-user/index.html
+<h1>Welcome to My App!</h1>
+<p>Served by Python HTTP server on port 80</p>
+HTML
+
+# Run Python HTTP server on port 80 in background
+nohup python3 -m http.server 80 --directory /home/ec2-user &
+
+EOF
+  )
+
 }
 resource "aws_autoscaling_group" "app_asg" {
   desired_capacity=2
@@ -186,7 +199,9 @@ resource "aws_autoscaling_group" "app_asg" {
 
   tag {
     key = "Name"
+
     value="App-ASG-Instance"
     propagate_at_launch = true
   }
+  force_delete = true
 }
